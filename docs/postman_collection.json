@@ -1,0 +1,235 @@
+{
+  "info": {
+    "name": "IoT Middleware API",
+    "description": "Colección de Postman para probar los endpoints del middleware IoT",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/api/health/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "health", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "IoT - PIR Event",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"device_id\": \"ESP32_CAM_001\",\n  \"sensor_pin\": 13,\n  \"motion_detected\": true,\n  \"timestamp\": \"2024-01-15T10:30:00Z\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/pir/event/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "pir", "event", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "IoT - Upload Images",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "event_id",
+              "value": "{{event_id}}",
+              "type": "text"
+            },
+            {
+              "key": "device_id",
+              "value": "ESP32_CAM_001",
+              "type": "text"
+            },
+            {
+              "key": "images[]",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/images/upload/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "images", "upload", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Auth - Get Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"username\": \"admin\",\n  \"password\": \"admin123\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/token/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "token", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Devices - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/devices/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "devices", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Devices - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"ESP32_CAM_001\",\n  \"address\": \"192.168.1.100\",\n  \"ubication\": \"Entrada principal\",\n  \"status\": true\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/devices/create/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "devices", "create", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Sensors - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/sensors/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sensors", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Sensors - Create",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"PIR Entrada\",\n  \"type\": \"pir\",\n  \"pin\": 13,\n  \"status\": true,\n  \"device\": \"{{device_id}}\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/api/sensors/create/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "sensors", "create", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Events - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/events/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "events", ""]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Alerts - List",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/api/alerts/",
+          "host": ["{{baseUrl}}"],
+          "path": ["api", "alerts", ""]
+        }
+      },
+      "response": []
+    }
+  ]
+}

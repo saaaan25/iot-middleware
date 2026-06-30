@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.eggs/
+venv/
+ENV/
+env/
+
+# Django
+*.log
+*.sqlite3
+media/
+staticfiles/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Models (se montan como volumen)
+models/*.pth
+models/*.pt
+
+# Documentation
+README.md
+docs/
+
+# Scripts
+scripts/
+
+# Docker
+docker-compose.yml
+Dockerfile
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Nginx
+nginx/
+
+# Debug
+debug.log

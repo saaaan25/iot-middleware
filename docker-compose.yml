@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # Django Application - Middleware de transferencia
+  web:
+    build: .
+    container_name: iot_middleware_web
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+      - media_volume:/app/media
+    ports:
+      - "8000:8000"
+    environment:
+      - DEBUG=True
+      - SUPABASE_URL=${SUPABASE_URL}
+      - SUPABASE_KEY=${SUPABASE_KEY}
+      - SUPABASE_SERVICE_KEY=${SUPABASE_SERVICE_KEY}
+      - MODEL_PATH=models/best_model.pth
+      - CONFIDENCE_THRESHOLD=0.7
+      - MAX_IMAGES_TO_SAVE=5
+      - IMAGES_PER_EVENT=10
+    networks:
+      - iot_network
+    # restart: always  # Descomentar para producción
+
+  # Nginx (para producción)
+  nginx:
+    image: nginx:alpine
+    container_name: iot_middleware_nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - media_volume:/app/media
+    depends_on:
+      - web
+    networks:
+      - iot_network
+    # restart: always  # Descomentar para producción
+
+volumes:
+  media_volume:
+
+networks:
+  iot_network:
+    driver: bridge
