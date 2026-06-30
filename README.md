@@ -6,7 +6,7 @@
 
 ```
 ┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│   ESP32     │─────▶│   Django     │─────▶│  Supabase   │
+│   ESP32     │────▶│   Django     │─────▶│  Supabase   │
 │   PIR       │      │  Middleware  │      │  (Storage + │
 │             │      │  (Transfer)  │      │   Database) │
 └─────────────┘      └──────────────┘      └─────────────┘
@@ -511,9 +511,27 @@ docker-compose logs -f
 
 - Endpoints IoT sin autenticación (considerar API Key en producción)
 - Endpoints de gestión con JWT
-- CORS configurado
+- CORS configurado (permite todas las rutas en desarrollo)
 - Variables de entorno para credenciales
 - **No hay base de datos local** - Solo Supabase
+
+### Configuración CORS
+
+**Desarrollo/Testing** (permite todas las rutas):
+```python
+# En settings.py
+CORS_ALLOW_ALL_ORIGINS = True
+```
+
+**Producción** (solo orígenes específicos):
+```python
+# En settings.py
+CORS_ALLOW_ALL_ORIGINS = False
+CORS_ALLOWED_ORIGINS = [
+    "https://tu-dominio.com",
+    "https://app.tu-dominio.com",
+]
+```
 
 ## 📝 Código ESP32
 

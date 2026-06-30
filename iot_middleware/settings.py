@@ -119,14 +119,42 @@ SIMPLE_JWT = {
 }
 
 # CORS Configuration
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:8000",
-    "http://127.0.0.1:8000",
-]
+# Para permitir TODAS las rutas (desarrollo/testing)
+CORS_ALLOW_ALL_ORIGINS = True
+
+# Si quieres permitir solo orígenes específicos, comenta la línea anterior
+# y descomenta las siguientes:
+# CORS_ALLOWED_ORIGINS = [
+#     "http://localhost:3000",
+#     "http://127.0.0.1:3000",
+#     "http://localhost:8000",
+#     "http://127.0.0.1:8000",
+# ]
 
 CORS_ALLOW_CREDENTIALS = True
+
+# Métodos HTTP permitidos
+CORS_ALLOW_METHODS = [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS',
+]
+
+# Headers permitidos
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
 
 # ==================== SUPABASE CONFIGURATION ====================
 # ÚNICO almacenamiento de datos - Todo se guarda en Supabase

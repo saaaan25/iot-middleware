@@ -57,7 +57,25 @@ class AIService:
         try:
             if os.path.exists(self.model_path):
                 logger.info(f"Loading AI model from {self.model_path}")
-                self.model = torch.load(self.model_path, map_location=self.device)
+                loaded = torch.load(self.model_path, map_location=self.device)
+                
+                # Si es un diccionario, extraer el modelo
+                if isinstance(loaded, dict):
+                    # Intentar obtener el modelo del diccionario
+                    if 'model' in loaded:
+                        self.model = loaded['model']
+                    elif 'model_state_dict' in loaded:
+                        # Crear modelo dummy y cargar state_dict
+                        self.model = self._create_dummy_model()
+                        self.model.load_state_dict(loaded['model_state_dict'])
+                    else:
+                        # Si no se encuentra, usar las claves del diccionario
+                        logger.warning(f"Model file is a dict with keys: {list(loaded.keys())}")
+                        self.model = self._create_dummy_model()
+                else:
+                    # Si es directamente el modelo
+                    self.model = loaded
+                
                 self.model.eval()
                 logger.info("AI model loaded successfully")
             else:
