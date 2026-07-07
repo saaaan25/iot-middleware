@@ -248,7 +248,8 @@ def health_check(request):
         'version': '1.0.0',
         'mode': 'transfer_only',
         'supabase_configured': bool(settings.SUPABASE_URL and settings.SUPABASE_KEY),
-        'ai_model_loaded': ai_service.model is not None
+        # Cambiamos ai_service.model por model_ready
+        'ai_model_remote_ready': getattr(ai_service, 'model_ready', False) 
     })
 
 
