@@ -56,6 +56,18 @@ def receive_pir_event(request):
                 'success': False,
                 'error': 'Missing required fields: device_id, sensor_pin'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Obtener sensor_id obligatorio para tabla events.
+        sensor_result = supabase_service.get_or_create_sensor(
+            device_label=device_id,
+            sensor_pin=int(sensor_pin),
+            sensor_type='pir'
+        )
+        if not sensor_result['success'] or not sensor_result['sensor_id']:
+            return Response({
+                'success': False,
+                'error': f"Error resolving sensor_id: {sensor_result['error']}"
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         
         # Preparar datos del evento para Supabase
         event_data = {
@@ -66,7 +78,7 @@ def receive_pir_event(request):
                 'sensor_pin': sensor_pin,
                 'timestamp': data.get('timestamp', timezone.now().isoformat())
             }),
-            'sensor_id': None,  # Se debe obtener del sensor en Supabase
+            'sensor_id': sensor_result['sensor_id'],
             'event_date': timezone.now().isoformat()
         }
         
@@ -211,7 +223,8 @@ def receive_images(request):
             }
             
             # Actualizar evento en Supabase
-            supabase_service.client.table('events').update(event_update).eq('id', event_id).execute()
+            write_client = supabase_service.service_client or supabase_service.client
+            write_client.table('events').update(event_update).eq('id', event_id).execute()
             
             # Crear alerta en Supabase
             alert_data = {
