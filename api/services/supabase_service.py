@@ -35,6 +35,43 @@ class SupabaseService:
     def _write_client(self):
         """Return service role client for writes when available."""
         return self.service_client or self.client
+
+    def get_or_create_sensor(self, device_label: str, sensor_pin: int, sensor_type: str = 'pir') -> dict:
+        """
+        Resolve a sensor id by logical name/pin, creating it if missing.
+
+        Returns:
+            dict: {'success': bool, 'sensor_id': str|None, 'error': str|None}
+        """
+        try:
+            write_client = self._write_client()
+            if not write_client:
+                return {'success': False, 'sensor_id': None, 'error': 'Supabase not configured'}
+
+            sensor_name = f"{sensor_type.upper()}_{device_label}_{sensor_pin}"
+
+            # 1) Try by exact name first.
+            lookup = write_client.table('sensors').select('id').eq('name', sensor_name).limit(1).execute()
+            if lookup.data:
+                return {'success': True, 'sensor_id': lookup.data[0]['id'], 'error': None}
+
+            # 2) Create minimal sensor row compatible with current schema.
+            sensor_row = {
+                'name': sensor_name,
+                'type': sensor_type,
+                'pin': sensor_pin,
+                'status': True,
+                'device_id': None,
+            }
+
+            created = write_client.table('sensors').insert(sensor_row).execute()
+            if created.data:
+                return {'success': True, 'sensor_id': created.data[0]['id'], 'error': None}
+
+            return {'success': False, 'sensor_id': None, 'error': 'Could not create sensor row'}
+        except Exception as e:
+            logger.error(f"Error resolving/creating sensor: {str(e)}")
+            return {'success': False, 'sensor_id': None, 'error': str(e)}
     
     def upload_image(self, image_file, bucket_name='event-images', folder_path='events/') -> dict:
         """
