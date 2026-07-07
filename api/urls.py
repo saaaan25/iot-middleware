@@ -8,6 +8,8 @@ from . import views
 urlpatterns = [
     # IoT Endpoints (sin autenticación para ESP32)
     path('pir/event/', views.receive_pir_event, name='receive_pir_event'),
+    path('pir/pending/', views.get_pending_motion_event, name='get_pending_motion_event'),
+    path('pir/result/', views.get_event_result, name='get_event_result'),
     path('images/upload/', views.receive_images, name='receive_images'),
     
     # Health check
