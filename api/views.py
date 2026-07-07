@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 supabase_service = SupabaseService()
 ai_service = AIService()
 
+# Estado en memoria para coordinar PIR <-> CAM sin autenticacion.
+# Nota: este estado se pierde si se reinicia el proceso.
+PENDING_EVENTS = []
+EVENT_RESULTS = {}
+
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
@@ -81,6 +86,14 @@ def receive_pir_event(request):
         
         # Si hay movimiento, indicar capturar imágenes
         if motion_detected:
+            # Registrar evento pendiente para que ESP32-CAM lo recoja por polling.
+            PENDING_EVENTS.append({
+                'event_id': event_id,
+                'device_id': device_id,
+                'created_at': timezone.now().isoformat(),
+                'consumed': False
+            })
+
             return Response({
                 'success': True,
                 'event_id': event_id,
@@ -219,6 +232,31 @@ def receive_images(request):
             }
         else:
             response_data['ai_processing']['message'] = ai_result['save_reason']
+
+        # Publicar resultado para que ESP32 PIR actualice semaforo.
+        best_class = ai_result.get('best_classification')
+        class_name = (best_class or {}).get('class')
+        class_name_l = class_name.lower() if isinstance(class_name, str) else ''
+
+        if not class_name_l:
+            signal = 'no_face'
+        elif class_name_l in ['no_face', 'no-face', 'noface', 'sin_rostro', 'no rostro']:
+            signal = 'no_face'
+        elif 'registered' in class_name_l and 'unregistered' not in class_name_l and 'not_registered' not in class_name_l:
+            signal = 'registered'
+        elif class_name_l in ['known', 'authorized']:
+            signal = 'registered'
+        else:
+            signal = 'unregistered'
+
+        EVENT_RESULTS[event_id] = {
+            'status': 'ready',
+            'signal': signal,
+            'class_name': class_name,
+            'updated_at': timezone.now().isoformat()
+        }
+
+        response_data['pir_signal'] = signal
         
         # Limpiar archivos temporales
         for img_path in image_paths:
@@ -248,9 +286,83 @@ def health_check(request):
         'version': '1.0.0',
         'mode': 'transfer_only',
         'supabase_configured': bool(settings.SUPABASE_URL and settings.SUPABASE_KEY),
-        # Cambiamos ai_service.model por model_ready
-        'ai_model_remote_ready': getattr(ai_service, 'model_ready', False) 
+        'ai_model_loaded': ai_service.model is not None
     })
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_pending_motion_event(request):
+    """
+    Endpoint para que ESP32-CAM haga polling y reciba un evento pendiente.
+
+    Query params:
+    - device_id (opcional): filtra por device_id del PIR.
+    """
+    try:
+        device_id = request.query_params.get('device_id')
+
+        for event in PENDING_EVENTS:
+            if event.get('consumed'):
+                continue
+            if device_id and event.get('device_id') != device_id:
+                continue
+
+            event['consumed'] = True
+            return Response({
+                'success': True,
+                'has_event': True,
+                'event_id': event.get('event_id'),
+                'device_id': event.get('device_id'),
+                'images_to_capture': settings.IMAGES_PER_EVENT
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            'success': True,
+            'has_event': False
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_event_result(request):
+    """
+    Endpoint para que ESP32 PIR consulte resultado final (semaforo).
+
+    Query params:
+    - event_id (requerido)
+    """
+    try:
+        event_id = request.query_params.get('event_id')
+        if not event_id:
+            return Response({
+                'success': False,
+                'error': 'Missing required query param: event_id'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        result = EVENT_RESULTS.get(event_id)
+        if not result:
+            return Response({
+                'success': True,
+                'status': 'pending',
+                'event_id': event_id
+            }, status=status.HTTP_200_OK)
+
+        return Response({
+            'success': True,
+            'event_id': event_id,
+            **result
+        }, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({
+            'success': False,
+            'error': str(e)
+        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 # ==================== ENDPOINTS DE GESTIÓN (SOLO LECTURA DESDE SUPABASE) ====================
