@@ -31,6 +31,10 @@ class SupabaseService:
         else:
             self.client = create_client(self.url, self.key)
             self.service_client = create_client(self.url, self.service_key) if self.service_key else None
+
+    def _write_client(self):
+        """Return service role client for writes when available."""
+        return self.service_client or self.client
     
     def upload_image(self, image_file, bucket_name='event-images', folder_path='events/') -> dict:
         """
@@ -118,11 +122,12 @@ class SupabaseService:
             dict: Contains 'success' and 'data' or 'error' keys
         """
         try:
-            if not self.client:
+            write_client = self._write_client()
+            if not write_client:
                 return {'success': False, 'error': 'Supabase not configured'}
             
             # Insert event into Supabase
-            response = self.client.table('events').insert(event_data).execute()
+            response = write_client.table('events').insert(event_data).execute()
             
             return {
                 'success': True,
@@ -149,11 +154,12 @@ class SupabaseService:
             dict: Contains 'success' and 'data' or 'error' keys
         """
         try:
-            if not self.client:
+            write_client = self._write_client()
+            if not write_client:
                 return {'success': False, 'error': 'Supabase not configured'}
             
             # Insert alert into Supabase
-            response = self.client.table('alerts').insert(alert_data).execute()
+            response = write_client.table('alerts').insert(alert_data).execute()
             
             return {
                 'success': True,
