@@ -1,199 +1,279 @@
 /*
- * ESP32 WROOM-32 - Sensor PIR
- * Solo detección de movimiento - Sin cámara
- * 
- * Hardware:
- * - ESP32 WROOM-32
- * - Sensor PIR (HC-SR501)
- * 
- * Conexiones:
- * PIR VCC  → 3.3V o 5V
- * PIR GND  → GND
- * PIR OUT  → GPIO 19
+ * ESP32 Dev Module (WROOM-32) - PIR + Traffic Light
+ *
+ * Pin map requested by user:
+ * - GPIO 4  -> PIR sensor input
+ * - GPIO 21 -> Yellow LED
+ * - GPIO 18 -> Red LED
+ * - GPIO 19 -> Green LED
  */
 
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
 
-// ==================== CONFIGURACIÓN WiFi ====================
+// -------------------- WIFI --------------------
 const char* ssid = "TU_WIFI";
 const char* password = "TU_PASSWORD";
 
-// ==================== CONFIGURACIÓN DEL SERVIDOR ====================
-const char* serverUrl = "http://TU_SERVIDOR:8000/api";
+// -------------------- MIDDLEWARE --------------------
+const char* apiHost = "iot-middleware-production-4aa8.up.railway.app";
+const int apiPort = 443;
+const char* apiBasePath = "/api";
+
 const char* deviceId = "ESP32_PIR_001";
 
-// ==================== CONFIGURACIÓN DE PINES ====================
-const int pirPin = 19;        // Pin del sensor PIR
-const int ledPin = 2;         // LED indicador (opcional)
+// -------------------- HARDWARE --------------------
+const int pirPin = 4;
+const int ledYellowPin = 21;
+const int ledRedPin = 18;
+const int ledGreenPin = 19;
 
-// ==================== VARIABLES GLOBALES ====================
-bool motionDetected = false;
-unsigned long lastMotionTime = 0;
-const unsigned long debounceDelay = 5000;  // 5 segundos entre detecciones
+// -------------------- TIMING --------------------
+const unsigned long debounceMs = 5000;
+const unsigned long resultTimeoutMs = 90000;
+const unsigned long pollIntervalMs = 1500;
+const unsigned long resultDisplayMs = 5000;
 
-// ==================== FUNCIONES ====================
+unsigned long lastTriggerMs = 0;
+bool lastPirStateHigh = false;
 
-/**
- * Conecta a la red WiFi
- */
+void setTrafficLight(bool yellow, bool red, bool green) {
+  digitalWrite(ledYellowPin, yellow ? HIGH : LOW);
+  digitalWrite(ledRedPin, red ? HIGH : LOW);
+  digitalWrite(ledGreenPin, green ? HIGH : LOW);
+}
+
 void connectWiFi() {
-  Serial.printf("\n📡 Conectando a WiFi: %s\n", ssid);
-  
+  if (WiFi.status() == WL_CONNECTED) {
+    return;
+  }
+
+  Serial.printf("Connecting WiFi: %s\n", ssid);
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  
+
   int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  while (WiFi.status() != WL_CONNECTED && attempts < 40) {
     delay(500);
     Serial.print(".");
     attempts++;
   }
-  
+  Serial.println();
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\n✓ WiFi conectado");
-    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  Señal: %d dBm\n", WiFi.RSSI());
-  } else {
-    Serial.println("\n❌ Error al conectar WiFi");
-    Serial.println("  Reiniciando en 5 segundos...");
-    delay(5000);
-    ESP.restart();
+    Serial.printf("WiFi OK. IP=%s RSSI=%d dBm\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+    return;
   }
+
+  Serial.println("WiFi failed. Restarting in 5 seconds...");
+  delay(5000);
+  ESP.restart();
 }
 
-/**
- * Envía evento PIR al servidor
- */
-bool sendPirEvent(bool motionDetected) {
+bool postJson(const String& path, const String& body, String& responseBody, int& httpCode) {
   if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("❌ WiFi no conectado");
+    connectWiFi();
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
+  String url = String("https://") + apiHost + path;
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed (POST)");
     return false;
   }
-  
-  HTTPClient http;
-  
-  // Construir URL
-  String url = String(serverUrl) + "/pir/event/";
-  
-  http.begin(url);
+
+  http.setTimeout(15000);
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(10000);  // 10 segundos timeout
-  
-  // Crear JSON
-  StaticJsonDocument<200> doc;
+  httpCode = http.POST(body);
+  responseBody = http.getString();
+  http.end();
+
+  return httpCode > 0;
+}
+
+bool getJson(const String& path, String& responseBody, int& httpCode) {
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
+  WiFiClientSecure client;
+  client.setInsecure();
+
+  HTTPClient http;
+  String url = String("https://") + apiHost + path;
+  if (!http.begin(client, url)) {
+    Serial.println("HTTP begin failed (GET)");
+    return false;
+  }
+
+  http.setTimeout(15000);
+  httpCode = http.GET();
+  responseBody = http.getString();
+  http.end();
+
+  return httpCode > 0;
+}
+
+bool sendPirEvent(String& eventIdOut) {
+  StaticJsonDocument<256> doc;
   doc["device_id"] = deviceId;
   doc["sensor_pin"] = pirPin;
-  doc["motion_detected"] = motionDetected;
-  
-  String requestBody;
-  serializeJson(doc, requestBody);
-  
-  // Enviar POST
-  Serial.printf("📤 Enviando evento PIR...\n");
-  int httpResponseCode = http.POST(requestBody);
-  
-  if (httpResponseCode > 0) {
-    String response = http.getString();
-    Serial.printf("✓ Respuesta: %d\n", httpResponseCode);
-    Serial.printf("  Body: %s\n", response.c_str());
-    
-    // Parsear respuesta
-    StaticJsonDocument<500> responseDoc;
-    if (deserializeJson(responseDoc, response) == DESERIALIZATION_OK) {
-      if (responseDoc["success"] == true) {
-        const char* eventId = responseDoc["event_id"];
-        const char* action = responseDoc["action"];
-        
-        Serial.printf("✓ Evento creado: %s\n", eventId);
-        Serial.printf("  Acción: %s\n", action);
-        
-        // Si la acción es capturar imágenes, guardar event_id
-        if (strcmp(action, "capture_images") == 0) {
-          int imagesToCapture = responseDoc["images_to_capture"];
-          Serial.printf("  Imágenes a capturar: %d\n", imagesToCapture);
-          
-          // Guardar event_id en EEPROM o preferences para que la cámara lo use
-          // Por ahora solo lo imprimimos
-          Serial.printf("  Event ID para cámara: %s\n", eventId);
-        }
-        
-        http.end();
-        return true;
-      }
-    }
-  } else {
-    Serial.printf("❌ Error HTTP: %d\n", httpResponseCode);
+  doc["motion_detected"] = true;
+
+  String body;
+  serializeJson(doc, body);
+
+  String response;
+  int httpCode = -1;
+  String path = String(apiBasePath) + "/pir/event/";
+
+  if (!postJson(path, body, response, httpCode)) {
+    Serial.println("Failed to POST PIR event");
+    return false;
   }
-  
-  http.end();
-  return false;
+
+  Serial.printf("PIR event response code: %d\n", httpCode);
+  if (httpCode != 200) {
+    Serial.printf("Body: %s\n", response.c_str());
+    return false;
+  }
+
+  StaticJsonDocument<768> res;
+  DeserializationError err = deserializeJson(res, response);
+  if (err) {
+    Serial.printf("JSON parse error (pir/event): %s\n", err.c_str());
+    return false;
+  }
+
+  bool success = res["success"] | false;
+  const char* action = res["action"] | "none";
+  const char* eventId = res["event_id"] | "";
+
+  if (!success || String(action) != "capture_images" || strlen(eventId) == 0) {
+    Serial.println("PIR event accepted but no capture action/event_id");
+    return false;
+  }
+
+  eventIdOut = String(eventId);
+  Serial.printf("Event created: %s\n", eventIdOut.c_str());
+  return true;
 }
 
-// ==================== SETUP ====================
+// Returns: registered, unregistered, no_face, pending, timeout, error
+String waitForEventResult(const String& eventId) {
+  unsigned long start = millis();
+
+  while ((millis() - start) < resultTimeoutMs) {
+    String response;
+    int httpCode = -1;
+    String path = String(apiBasePath) + "/pir/result/?event_id=" + eventId;
+
+    bool ok = getJson(path, response, httpCode);
+    if (!ok || httpCode != 200) {
+      Serial.printf("Result polling failed. code=%d\n", httpCode);
+      delay(pollIntervalMs);
+      continue;
+    }
+
+    StaticJsonDocument<768> res;
+    DeserializationError err = deserializeJson(res, response);
+    if (err) {
+      Serial.printf("JSON parse error (pir/result): %s\n", err.c_str());
+      delay(pollIntervalMs);
+      continue;
+    }
+
+    const char* status = res["status"] | "pending";
+    if (String(status) == "pending") {
+      delay(pollIntervalMs);
+      continue;
+    }
+
+    const char* signal = res["signal"] | "error";
+    return String(signal);
+  }
+
+  return "timeout";
+}
+
+void showFinalSignal(const String& signal) {
+  if (signal == "registered") {
+    Serial.println("Result: REGISTERED -> GREEN");
+    setTrafficLight(false, false, true);
+    delay(resultDisplayMs);
+    setTrafficLight(false, false, false);
+    return;
+  }
+
+  if (signal == "unregistered") {
+    Serial.println("Result: UNREGISTERED -> RED");
+    setTrafficLight(false, true, false);
+    delay(resultDisplayMs);
+    setTrafficLight(false, false, false);
+    return;
+  }
+
+  // no_face, timeout, error => yellow shortly, then off
+  Serial.printf("Result: %s -> YELLOW then OFF\n", signal.c_str());
+  setTrafficLight(true, false, false);
+  delay(2000);
+  setTrafficLight(false, false, false);
+}
 
 void setup() {
-  // Inicializar Serial
   Serial.begin(115200);
-  Serial.setTimeout(5000);
-  
-  Serial.println("\n" + String("=").repeat(50));
-  Serial.println("🚀 ESP32 WROOM-32 - Sensor PIR");
-  Serial.println("=".repeat(50));
-  
-  // Configurar pines
+  delay(300);
+
   pinMode(pirPin, INPUT);
-  pinMode(ledPin, OUTPUT);
-  
-  digitalWrite(ledPin, LOW);
-  
-  Serial.println("✓ Pines configurados");
-  
-  // Conectar WiFi
+  pinMode(ledYellowPin, OUTPUT);
+  pinMode(ledRedPin, OUTPUT);
+  pinMode(ledGreenPin, OUTPUT);
+  setTrafficLight(false, false, false);
+
+  Serial.println();
+  Serial.println("==================================================");
+  Serial.println("ESP32 PIR + Traffic Light");
+  Serial.println("Pins: PIR=4, YELLOW=21, RED=18, GREEN=19");
+  Serial.println("==================================================");
+
   connectWiFi();
-  
-  Serial.println("\n✓ Sistema listo");
-  Serial.println("  Esperando detección de movimiento...\n");
+  Serial.println("System ready.");
 }
 
-// ==================== LOOP ====================
-
 void loop() {
-  // Leer sensor PIR
-  int pirState = digitalRead(pirPin);
-  
-  // Detectar movimiento
-  if (pirState == HIGH && !motionDetected) {
-    unsigned long currentTime = millis();
-    
-    // Verificar debounce
-    if (currentTime - lastMotionTime > debounceDelay) {
-      motionDetected = true;
-      lastMotionTime = currentTime;
-      
-      Serial.println("\n" + String("=").repeat(50));
-      Serial.println("🚨 MOVIMIENTO DETECTADO");
-      Serial.println("=".repeat(50));
-      
-      // Encender LED indicador
-      digitalWrite(ledPin, HIGH);
-      
-      // Enviar evento PIR
-      bool eventSent = sendPirEvent(true);
-      
-      if (!eventSent) {
-        Serial.println("❌ No se pudo enviar el evento");
+  if (WiFi.status() != WL_CONNECTED) {
+    connectWiFi();
+  }
+
+  bool pirHigh = (digitalRead(pirPin) == HIGH);
+
+  // Rising edge trigger + debounce
+  if (pirHigh && !lastPirStateHigh) {
+    unsigned long nowMs = millis();
+    if (nowMs - lastTriggerMs >= debounceMs) {
+      lastTriggerMs = nowMs;
+
+      Serial.println();
+      Serial.println("Motion detected. Sending PIR event...");
+
+      // Yellow while middleware/camera workflow is in progress.
+      setTrafficLight(true, false, false);
+
+      String eventId;
+      if (!sendPirEvent(eventId)) {
+        showFinalSignal("error");
+      } else {
+        String signal = waitForEventResult(eventId);
+        showFinalSignal(signal);
       }
-      
-      // Apagar LED indicador
-      digitalWrite(ledPin, LOW);
-      
-      motionDetected = false;
-      
-      Serial.println("\n✓ Ciclo completado");
-      Serial.println("  Esperando próxima detección...\n");
     }
   }
-  
-  delay(100);  // Pequeño delay para estabilidad
+
+  lastPirStateHigh = pirHigh;
+  delay(80);
 }

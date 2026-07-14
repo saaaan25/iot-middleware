@@ -177,6 +177,34 @@ def receive_images(request):
         
         # Procesar imágenes con IA
         ai_result = ai_service.process_event_images(image_paths)
+        if not isinstance(ai_result, dict):
+            ai_result = {}
+
+        # Normalizar respuesta de IA para evitar KeyError ante respuestas parciales.
+        best_classification = ai_result.get('best_classification')
+        if not isinstance(best_classification, dict):
+            best_classification = None
+
+        # Fallback: algunos proveedores devuelven class/confidence en la raiz.
+        if best_classification is None and ai_result.get('class'):
+            best_classification = {
+                'class': ai_result.get('class'),
+                'confidence': ai_result.get('confidence', 0),
+                'all_probabilities': ai_result.get('all_probabilities', {})
+            }
+
+        should_save_event = ai_result.get('should_save_event')
+        if should_save_event is None:
+            # Si no viene decision explicita, inferir de forma conservadora.
+            should_save_event = bool(best_classification)
+        else:
+            should_save_event = bool(should_save_event)
+
+        save_reason = ai_result.get('save_reason') or ai_result.get('message') or 'AI response normalized'
+
+        images_to_save = ai_result.get('images_to_save')
+        if not isinstance(images_to_save, list):
+            images_to_save = []
         
         response_data = {
             'success': True,
@@ -184,19 +212,19 @@ def receive_images(request):
             'images_received': len(images),
             'images_processed': len(image_paths),
             'ai_processing': {
-                'should_save_event': ai_result['should_save_event'],
-                'save_reason': ai_result['save_reason'],
-                'best_classification': ai_result['best_classification']
+                'should_save_event': should_save_event,
+                'save_reason': save_reason,
+                'best_classification': best_classification
             }
         }
         
         # Si IA recomienda guardar, subir a Supabase
-        if ai_result['should_save_event'] and ai_result['images_to_save']:
+        if should_save_event and images_to_save:
             logger.info("IA recomienda guardar evento. Subiendo a Supabase...")
             
             # Subir mejores imágenes a Supabase Storage
             uploaded_images = []
-            for img_path in ai_result['images_to_save']:
+            for img_path in images_to_save:
                 with open(img_path, 'rb') as f:
                     upload_result = supabase_service.upload_image(
                         ContentFile(f.read(), name=os.path.basename(img_path))
@@ -210,7 +238,7 @@ def receive_images(request):
                         logger.info(f"Imagen subida a Supabase: {upload_result['path']}")
             
             # Actualizar evento en Supabase con resultado de IA
-            best_class = ai_result['best_classification']
+            best_class = best_classification
             event_update = {
                 'type': best_class['class'] if best_class else 'unknown',
                 'value': json.dumps({
@@ -227,10 +255,14 @@ def receive_images(request):
             write_client.table('events').update(event_update).eq('id', event_id).execute()
             
             # Crear alerta en Supabase
+            best_conf = 0
+            if best_class and isinstance(best_class.get('confidence'), (int, float)):
+                best_conf = float(best_class['confidence'])
+
             alert_data = {
                 'event_id': event_id,
                 'message': f"Evento detectado: {best_class['class'] if best_class else 'unknown'} "
-                          f"con {best_class['confidence']*100:.1f}% de confianza",
+                          f"con {best_conf*100:.1f}% de confianza",
                 'status': 'completed',
                 'created_at': timezone.now().isoformat()
             }
@@ -244,10 +276,10 @@ def receive_images(request):
                 'uploaded_images': uploaded_images
             }
         else:
-            response_data['ai_processing']['message'] = ai_result['save_reason']
+            response_data['ai_processing']['message'] = save_reason
 
         # Publicar resultado para que ESP32 PIR actualice semaforo.
-        best_class = ai_result.get('best_classification')
+        best_class = best_classification
         class_name = (best_class or {}).get('class')
         class_name_l = class_name.lower() if isinstance(class_name, str) else ''
 
