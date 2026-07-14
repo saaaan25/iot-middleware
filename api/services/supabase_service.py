@@ -101,7 +101,7 @@ class SupabaseService:
             response = self.service_client.storage.from_(bucket_name).upload(
                 path=full_path,
                 file=file_content,
-                file_options={"content-type": image_file.content_type}
+                file_options={"content-type": "image/jpeg"}
             )
             
             # Get public URL
