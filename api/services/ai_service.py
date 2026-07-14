@@ -87,6 +87,7 @@ class AIService:
                     "class": render_result.get("status", "UNKNOWN"),
                     "confidence": render_result.get("similarity", 0),
                     "matched_identity": render_result.get("matched_identity"),
+                    "all_probabilities": render_result.get("all_probabilities", {}), 
                     "top5": render_result.get("top5", []),
                 }
 
