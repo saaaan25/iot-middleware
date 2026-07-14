@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from django.core.files.base import ContentFile
+from datetime import datetime
 
 from .services.supabase_service import SupabaseService
 from .services.ai_service import AIService
@@ -221,13 +222,20 @@ def receive_images(request):
         # Si IA recomienda guardar, subir a Supabase
         if should_save_event and images_to_save:
             logger.info("IA recomienda guardar evento. Subiendo a Supabase...")
+
+            event_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
             
             # Subir mejores imágenes a Supabase Storage
             uploaded_images = []
-            for img_path in images_to_save:
+            for sequence, img_path in enumerate(images_to_save, start=1):
                 with open(img_path, 'rb') as f:
                     upload_result = supabase_service.upload_image(
-                        ContentFile(f.read(), name=os.path.basename(img_path))
+                        image_file=ContentFile(
+                            f.read(),
+                            name=os.path.basename(img_path)
+                        ),
+                        sequence=sequence,
+                        event_timestamp=event_timestamp
                     )
                     
                     if upload_result['success']:
