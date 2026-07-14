@@ -9,6 +9,7 @@ from supabase import create_client, Client
 from django.conf import settings
 from django.core.files.base import ContentFile
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -73,7 +74,7 @@ class SupabaseService:
             logger.error(f"Error resolving/creating sensor: {str(e)}")
             return {'success': False, 'sensor_id': None, 'error': str(e)}
     
-    def upload_image(self, image_file, bucket_name='event-images', folder_path='events/') -> dict:
+    def upload_image(self, image_file, sequence=1, event_timestamp=None, bucket_name='event-images', folder_path='events/') -> dict:
         """
         Upload an image to Supabase Storage
         
@@ -90,9 +91,14 @@ class SupabaseService:
                 return {'success': False, 'error': 'Supabase not configured'}
             
             # Generate unique filename
-            file_extension = Path(image_file.name).suffix
-            unique_filename = f"{uuid.uuid4()}{file_extension}"
-            full_path = f"{folder_path}{unique_filename}"
+            file_extension = Path(image_file.name).suffix or ".jpg"
+            
+            if event_timestamp is None:
+                event_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
+            
+            filename = f"{event_timestamp}-{sequence:02d}{file_extension}"
+            
+            full_path = f"{folder_path}{filename}"
             
             # Read file content
             file_content = image_file.read()
