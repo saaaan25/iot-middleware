@@ -234,8 +234,8 @@ def receive_images(request):
                             f.read(),
                             name=os.path.basename(img_path)
                         ),
-                        sequence=sequence,
-                        event_timestamp=event_timestamp
+                        event_id=event_id,
+                        sequence=sequence
                     )
                     
                     if upload_result['success']:
