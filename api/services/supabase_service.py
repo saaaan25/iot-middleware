@@ -74,7 +74,7 @@ class SupabaseService:
             logger.error(f"Error resolving/creating sensor: {str(e)}")
             return {'success': False, 'sensor_id': None, 'error': str(e)}
     
-    def upload_image(self, image_file, sequence=1, event_timestamp=None, bucket_name='event-images', folder_path='events/') -> dict:
+    def upload_image(self, image_file, sequence=1, event_id, bucket_name='event-images', folder_path='events/') -> dict:
         """
         Upload an image to Supabase Storage
         
@@ -92,11 +92,8 @@ class SupabaseService:
             
             # Generate unique filename
             file_extension = Path(image_file.name).suffix or ".jpg"
-            
-            if event_timestamp is None:
-                event_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            
-            filename = f"{event_timestamp}-{sequence:02d}{file_extension}"
+
+            filename = f"{event_id}-{sequence:02d}{file_extension}"
             
             full_path = f"{folder_path}{filename}"
             
